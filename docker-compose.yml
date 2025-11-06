@@ -1,0 +1,74 @@
+version: "3.8"
+
+# بلاک مشترک محیط پروکسی برای همه سرویس‌ها
+x-proxy-env: &proxy-env
+  - HTTP_PROXY=${HTTP_PROXY_URL}
+  - http_proxy=${HTTP_PROXY_URL}
+  - HTTPS_PROXY=${HTTPS_PROXY_URL}
+  - https_proxy=${HTTPS_PROXY_URL}
+  - NO_PROXY=${NO_PROXY}
+  - no_proxy=${NO_PROXY}
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_POSTGRESDB_USER}
+      - POSTGRES_PASSWORD=${DB_POSTGRESDB_PASSWORD}
+      - POSTGRES_DB=${DB_POSTGRESDB_DATABASE}
+      - TZ=${TZ}
+      - <<: *proxy-env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_POSTGRESDB_USER} -d ${DB_POSTGRESDB_DATABASE} || exit 1",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${N8N_PORT}:5678"
+    environment:
+      - TZ=${TZ}
+      # وب/هاست
+      - N8N_HOST=${N8N_HOST}
+      - N8N_PORT=${N8N_PORT}
+      - N8N_PROTOCOL=${N8N_PROTOCOL}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      # احراز هویت
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      # دیتابیس
+      - DB_TYPE=${DB_TYPE}
+      - DB_POSTGRESDB_HOST=${DB_POSTGRESDB_HOST}
+      - DB_POSTGRESDB_PORT=${DB_POSTGRESDB_PORT}
+      - DB_POSTGRESDB_DATABASE=${DB_POSTGRESDB_DATABASE}
+      - DB_POSTGRESDB_USER=${DB_POSTGRESDB_USER}
+      - DB_POSTGRESDB_PASSWORD=${DB_POSTGRESDB_PASSWORD}
+      # پروکسی
+      - <<: *proxy-env
+    volumes:
+      - n8n_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    # برای حل پرمیشن روی لینوکس در صورت نیاز:
+    # user: "1000:1000"
+
+volumes:
+  n8n_data:
+  pg_data:
